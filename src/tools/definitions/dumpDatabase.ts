@@ -1,40 +1,123 @@
 import { z } from 'zod';
-import { dumpDatabase } from '../dumpDatabase.js';
-import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import { dumpDatabase } from '../dumpDatabase.js'; // Ensure this is uncommented
+import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types"; // Back to ServerRequest
+import { spawn } from 'child_process'; // Added for local execAppleScript
 
+// Local execAppleScript function using spawn
+function execAppleScript(scriptBody: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const process = spawn('osascript', ['-e', scriptBody]);
+    let stdout = '';
+    let stderr = '';
+
+    process.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    process.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        // Try to parse AppleScript error from stderr
+        const appleScriptErrorMatch = stderr.match(/script error:(.*)number(.*)/s) || stderr.match(/execution error:(.*)number(.*)/s);
+        let errorMessage = stderr.trim();
+        if (appleScriptErrorMatch && appleScriptErrorMatch[1]) {
+            errorMessage = `AppleScript Error: ${appleScriptErrorMatch[1].trim()}`;
+            if (appleScriptErrorMatch[2] && appleScriptErrorMatch[2].trim() !== "") {
+                 errorMessage += ` (Error Number: ${appleScriptErrorMatch[2].trim()})`;
+            }
+        } else if (stderr.includes("osascript: ")) { // Catch direct osascript errors not fitting the pattern
+            errorMessage = stderr.substring(stderr.indexOf("osascript: ") + "osascript: ".length).trim();
+        }
+
+        const error = new Error(`AppleScript execution failed with code ${code}. ${errorMessage}`);
+        (error as any).stderr = stderr.trim();
+        (error as any).stdout = stdout.trim(); 
+        reject(error);
+      }
+    });
+
+    process.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+
+// Original schema - restored
 export const schema = z.object({
   hideCompleted: z.boolean().optional().describe("Set to false to show completed and dropped tasks (default: true)"),
-  hideRecurringDuplicates: z.boolean().optional().describe("Set to true to hide duplicate instances of recurring tasks (default: true)")
+  hideRecurringDuplicates: z.boolean().optional().default(true).describe("Set to true to hide duplicate instances of recurring tasks (default: true)")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
+// Minimal schema for testing - commented out
+// export const schema = z.object({
+//   testParam: z.string().optional().describe("A dummy parameter for testing")
+// });
+
+
+// Original handler - restored
+export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) {
+  // Logging needs to be addressed. For now, console.error is a placeholder.
+  // The 'extra' object does not directly contain a logger or mcpContext.
   try {
-    // Get raw database
-    const database = await dumpDatabase();
+    // TODO: Determine how to get McpContext and Logger to pass to dumpDatabase.
+    // For now, passing undefined to allow compilation, assuming dumpDatabase can handle it or uses its own fallbacks.
+    const database = await dumpDatabase(args, undefined /* McpContext */, undefined /* Logger */);
     
-    // Format as compact report
-    const formattedReport = formatCompactReport(database, {
-      hideCompleted: args.hideCompleted !== false, // Default to true
-      hideRecurringDuplicates: args.hideRecurringDuplicates !== false // Default to true
+    const report = formatCompactReport(database, {
+      hideCompleted: args.hideCompleted !== false,
+      hideRecurringDuplicates: args.hideRecurringDuplicates !== false
     });
     
     return {
       content: [{
         type: "text" as const,
-        text: formattedReport
+        text: report
       }]
     };
   } catch (err: unknown) {
+    let errorMessage = "Error generating report. Please ensure OmniFocus is running and try again.";
+    if (err instanceof Error) {
+      errorMessage = `Handler Error: ${err.message}. Stack: ${err.stack}`;
+    } else if (typeof err === 'string') {
+      errorMessage = `Handler Error: ${err}`;
+    } else {
+      try {
+        errorMessage = `Handler Error: ${JSON.stringify(err, null, 2)}`
+      } catch (stringifyError) {
+        errorMessage = `Handler Error: Could not stringify error object.`
+      }
+    }
+    
     return {
       content: [{
         type: "text" as const,
-        text: `Error generating report. Please ensure OmniFocus is running and try again.`
+        text: errorMessage // Return the detailed error message
       }],
       isError: true
     };
   }
 }
 
+// Minimal handler for testing - commented out
+// export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
+//   console.error("MINIMAL DUMPDB HANDLER CALLED (using console.error) with args:", args);
+//   // For now, just return a success message to see if this handler is reached
+//   return {
+//     content: [{
+//       type: "text" as const,
+//       text: "Minimal dumpDatabase handler executed successfully."
+//     }]
+//   };
+// }
+
+// Helper functions (uncommented)
 // Function to format date in compact format (M/D)
 function formatCompactDate(isoDate: string | null): string {
   if (!isoDate) return '';
@@ -54,10 +137,7 @@ function formatCompactReport(database: any, options: { hideCompleted: boolean, h
   let output = `# OMNIFOCUS [${dateStr}]\n\n`;
   
   // Add legend
-  output += `FORMAT LEGEND:
-F: Folder | P: Project | •: Task | 🚩: Flagged
-Dates: [M/D] | Duration: (30m) or (2h) | Tags: <tag1,tag2>
-Status: #next #avail #block #due #over #compl #drop\n\n`;
+  output += `FORMAT LEGEND:\nF: Folder | P: Project | •: Task | 🚩: Flagged\nDates: [M/D] | Duration: (30m) or (2h) | Tags: <tag1,tag2>\nStatus: #next #avail #block #due #over #compl #drop\n\n`;
   
   // Map of folder IDs to folder objects for quick lookup
   const folderMap = new Map();
@@ -120,7 +200,7 @@ Status: #next #avail #block #due #over #compl #drop\n\n`;
   function processProject(project: any, level: number): string {
     const indent = '   '.repeat(level);
     
-    // Skip if it's completed or dropped and we're hiding completed items
+    // Skip if it\'s completed or dropped and we\'re hiding completed items
     if (hideCompleted && (project.status === 'Done' || project.status === 'Dropped')) {
       return '';
     }
@@ -162,7 +242,7 @@ Status: #next #avail #block #due #over #compl #drop\n\n`;
   function processTask(task: any, level: number): string {
     const indent = '   '.repeat(level);
     
-    // Skip if it's completed or dropped and we're hiding completed items
+    // Skip if it\'s completed or dropped and we\'re hiding completed items
     if (hideCompleted && (task.completed || task.taskStatus === 'Completed' || task.taskStatus === 'Dropped')) {
       return '';
     }
@@ -275,10 +355,10 @@ function computeMinimumUniquePrefixes(tagNames: string[]): Map<string, string> {
       
       // Check if this prefix uniquely identifies the tag
       isUnique = tagNames.every(otherTag => {
-        // If it's the same tag, skip comparison
+        // If it\'s the same tag, skip comparison
         if (otherTag === tagName) return true;
         
-        // If the other tag starts with the same prefix, it's not unique
+        // If the other tag starts with the same prefix, it\'s not unique
         return !otherTag.startsWith(prefix);
       });
       
@@ -289,7 +369,7 @@ function computeMinimumUniquePrefixes(tagNames: string[]): Map<string, string> {
       }
     }
     
-    // If we couldn't find a unique prefix, use the full tag name
+    // If we couldn\'t find a unique prefix, use the full tag name
     if (!isUnique) {
       prefixMap.set(tagName, tagName);
     }

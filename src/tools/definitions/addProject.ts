@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { addProject, AddProjectParams } from '../primitives/addProject.js';
-import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { addProject } from '../primitives/addProject.js';
 
 export const schema = z.object({
   name: z.string().describe("The name of the project"),
@@ -11,13 +12,14 @@ export const schema = z.object({
   estimatedMinutes: z.number().optional().describe("Estimated time to complete the project, in minutes"),
   tags: z.array(z.string()).optional().describe("Tags to assign to the project"),
   folderName: z.string().optional().describe("The name of the folder to add the project to (will add to root if not specified)"),
-  sequential: z.boolean().optional().describe("Whether tasks in the project should be sequential (default: false)")
+  sequential: z.boolean().optional().default(false).describe("Whether tasks in the project should be sequential (default: false)")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
+export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => {
+  console.log('addProject.handler called with:', args);
   try {
     // Call the addProject function 
-    const result = await addProject(args as AddProjectParams);
+    const result = await addProject(args);
     
     if (result.success) {
       // Project was added successfully

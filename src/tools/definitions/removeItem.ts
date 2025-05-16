@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { removeItem, RemoveItemParams } from '../primitives/removeItem.js';
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
 
 export const schema = z.object({
   id: z.string().optional().describe("The ID of the task or project to remove"),
@@ -8,17 +9,15 @@ export const schema = z.object({
   itemType: z.enum(['task', 'project']).describe("Type of item to remove ('task' or 'project')")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
+export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => {
+  // const { logger } = extra; // Placeholder for MCP logger
+  // logger.log('removeItem.handler called with:', args);
+  console.log('removeItem.handler called with:', args); // Temporary log
+
   try {
     // Validate that either id or name is provided
     if (!args.id && !args.name) {
-      return {
-        content: [{
-          type: "text" as const,
-          text: "Either id or name must be provided to remove an item."
-        }],
-        isError: true
-      };
+      throw new Error("Either id or name must be provided to remove an item.");
     }
     
     // Validate itemType
@@ -35,7 +34,7 @@ export async function handler(args: z.infer<typeof schema>, extra: RequestHandle
     // Log the remove operation for debugging
     console.error(`Removing ${args.itemType} with ID: ${args.id || 'not provided'}, Name: ${args.name || 'not provided'}`);
     
-    // Call the removeItem function 
+    // Call the removeItem function using the correctly imported 'removeItem'
     const result = await removeItem(args as RemoveItemParams);
     
     if (result.success) {

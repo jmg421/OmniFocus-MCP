@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { addOmniFocusTask, AddOmniFocusTaskParams } from '../primitives/addOmniFocusTask.js';
-import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { addOmniFocusTask } from '../primitives/addOmniFocusTask.js';
 
 export const schema = z.object({
   name: z.string().describe("The name of the task"),
@@ -13,10 +14,12 @@ export const schema = z.object({
   projectName: z.string().optional().describe("The name of the project to add the task to (will add to inbox if not specified)")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
+export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => {
+  console.error("TEST LOG FROM ADD_TASK HANDLER ENTRY (using console.error)");
+  console.error("[ADD_TASK_HANDLER_DEBUG] addOmniFocusTask handler entered with args (using console.error):", args);
   try {
     // Call the addOmniFocusTask function 
-    const result = await addOmniFocusTask(args as AddOmniFocusTaskParams);
+    const result = await addOmniFocusTask(args);
     
     if (result.success) {
       // Task was added successfully
@@ -50,7 +53,7 @@ export async function handler(args: z.infer<typeof schema>, extra: RequestHandle
     }
   } catch (err: unknown) {
     const error = err as Error;
-    console.error(`Tool execution error: ${error.message}`);
+    console.error(`[ADD_TASK_HANDLER_DEBUG] Tool execution error (using console.error): ${error.message}`);
     return {
       content: [{
         type: "text" as const,
