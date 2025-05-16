@@ -16,6 +16,9 @@ import * as batchAddItemsTool from './tools/definitions/batchAddItems.js';
 import * as batchRemoveItemsTool from './tools/definitions/batchRemoveItems.js';
 // import * as dummyLogTestTool from './tools/definitions/dummyLogTest.js'; // We'll use a more specific import below
 
+// Import for the new getNextActionsReport tool
+import { handler as getNextActionsReportHandler, schema as getNextActionsReportSchema } from './tools/definitions/getNextActionsReport.js';
+
 // Import specific exports from dummyLogTest.js
 import { 
   handler as dummyLogTestHandler, 
@@ -45,6 +48,17 @@ const dumpDatabaseRegResult = server.tool(
   typedDumpDatabaseHandler
 );
 console.error("[SERVER_DEBUG] Registration result for get_full_omnifocus_report:", dumpDatabaseRegResult);
+
+// Register the new dev_get_next_actions_omnifocus_report tool
+console.error("[SERVER_DEBUG] Attempting to register dev_get_next_actions_omnifocus_report...");
+const typedGetNextActionsReportHandler: ToolCallback<typeof getNextActionsReportSchema.shape> = getNextActionsReportHandler;
+const getNextActionsRegResult = server.tool(
+  "dev_get_next_actions_omnifocus_report",
+  "Gets the next actions report from your OmniFocus database using filterType: 'next_actions'",
+  getNextActionsReportSchema.shape,
+  typedGetNextActionsReportHandler
+);
+console.error("[SERVER_DEBUG] Registration result for dev_get_next_actions_omnifocus_report:", getNextActionsRegResult);
 
 const typedAddOmniFocusTaskHandler: ToolCallback<typeof addOmniFocusTaskTool.schema.shape> = addOmniFocusTaskTool.handler;
 server.tool(

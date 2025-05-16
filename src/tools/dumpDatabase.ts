@@ -5,6 +5,9 @@ import * as path from 'path';
 import * as os from 'os';
 // import { McpContext, Logger } from '@mcp/core'; // Temporarily commented out
 
+// MCP_PLUGIN_ID_INSERTION_POINT_AUG_2024
+const OMNIFOCUS_PLUGIN_ID = "com.jmg.exportmasterplan.v11.final";
+
 // --- Start of Local Type Definitions ---
 // If these types exist centrally, these local definitions can be removed later
 // and replaced with imports once the central paths/exports are confirmed.
@@ -16,6 +19,12 @@ export interface McpOmnifocusDevGetFullOmnifocusReportParams {
   // Add other params if any
   filterType?: 'full_dump' | 'next_actions'; // Added for explicit control
   omnijsAppleScriptDelay?: number; // Added to control AppleScript delay
+}
+
+// New interface for the GetNextActionsReport tool
+export interface McpOmnifocusDevGetNextActionsReportParams {
+  hideCompleted?: boolean;
+  omnijsAppleScriptDelay?: number;
 }
 
 // Interface for criteria passed to OmniJS
@@ -136,6 +145,11 @@ async function execAppleScript(scriptBody: string): Promise<string> {
   }
   const tempFilePath = path.join(tempDir, tempFileName);
 
+  // ---- START MCP DEBUG LOGGING (using console.error) ----
+  console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Writing to temp file: ${tempFilePath}`);
+  console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Script body first 100 chars: ${normalizedScriptBody.substring(0, 100)}...`);
+  // ---- END MCP DEBUG LOGGING ----
+
   try {
     fs.writeFileSync(tempFilePath, normalizedScriptBody, { encoding: 'utf8' });
   } catch (writeError: any) {
@@ -151,6 +165,13 @@ async function execAppleScript(scriptBody: string): Promise<string> {
     process.stderr.on('data', (data) => { stderr += data.toString(); });
 
     process.on('close', (code) => {
+      // ---- START MCP DEBUG LOGGING (using console.error) ----
+      const fullStdoutForLog = Buffer.concat(stdoutChunks).toString('utf8');
+      console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Process closed.`);
+      console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Exit code: ${code}`);
+      console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Stderr: "${stderr.trim()}"`);
+      console.error(`---> [MCP_EXEC_APPLE_SCRIPT_DEBUG] Stdout: "${fullStdoutForLog.trim()}"`);
+      // ---- END MCP DEBUG LOGGING ----
       try {
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath);
@@ -229,164 +250,98 @@ function transformOmniJsTaskToOmnifocusTask(jsTask: any): OmnifocusTask {
   };
 }
 
-// Main function to dump the database
-export async function dumpDatabase(
-  params: McpOmnifocusDevGetFullOmnifocusReportParams,
-  _mcpContext: any, // Reverted to any
-  _logger: any, // Reverted to any
+// Internal function to handle common logic for fetching and processing data from OmniFocus plugin
+async function executeOmniFocusPluginAndGetData(
+  filterTypeForPlugin: 'full_dump' | 'next_actions',
+  params: McpOmnifocusDevGetFullOmnifocusReportParams | McpOmnifocusDevGetNextActionsReportParams,
+  _mcpContext: any,
+  _logger: any,
 ): Promise<OmnifocusDatabase> {
-  //console.debug("[DUMPDB] Attempting to dump OmniFocus database...");
+  // ---- START MCP DEBUG LOGGING (using console.error) ----
+  console.error(`---> [MCP_EXECUTE_PLUGIN_DEBUG] Attempting to dump OmniFocus database with filterType: ${filterTypeForPlugin}`);
+  // ---- END MCP DEBUG LOGGING ----
 
   try {
-    // For pgrep, exec is still fine as it's a simple command.
-    // We need a separate simple exec promise for this, or adapt execAppleScript.
-    // For simplicity, let's use a quick promisified exec for pgrep.
     await new Promise<void>((resolve, reject) => {
         spawn('pgrep', ['-x', 'OmniFocus']).on('close', code => code === 0 ? resolve() : reject(new Error('OmniFocus process not found by pgrep.')));
     });
-    //console.debug("[DUMPDB] OmniFocus process found."); // Changed to //console.debug
   } catch (error) {
-    console.error("[DUMPDB] OmniFocus does not appear to be running or pgrep failed."); // Keep this as error
+    console.error("[DUMPDB_CORE] OmniFocus does not appear to be running or pgrep failed.");
     throw new Error("OmniFocus is not running or process check failed. Please start OmniFocus and try again.");
   }
-
-  const filterTypeForPlugin = params.filterType || 'next_actions'; // Default to 'next_actions' for optimization
 
   const filterCriteria: OmniJSFilterCriteria = {
     type: filterTypeForPlugin,
     hideCompleted: params.hideCompleted === true,
   };
 
-  // Escape the JSON string for safe inclusion in an AppleScript string literal
-  const filterCriteriaJSONString = JSON.stringify(filterCriteria)
-    .replace(/\\/g, '\\\\\\\\') // Escape backslashes
-    .replace(/"/g, '\\\\"');   // Escape double quotes
+  // This produces a string like "{\"type\":\"next_actions\",\"hideCompleted\":true}"
+  // which is suitable for direct embedding into an AppleScript string literal.
+  const escapedJsonCriteriaForAppleScriptString = JSON.stringify(filterCriteria)
+    .replace(/\\/g, '\\\\') // Correctly escape backslashes first
+    .replace(/"/g, '\\\"');   // Then correctly escape double quotes
 
-  const appleScriptDelay = params.omnijsAppleScriptDelay !== undefined ? params.omnijsAppleScriptDelay : (filterTypeForPlugin === 'next_actions' ? 5 : 30);
+  let appleScriptDelay: number;
+  if (params.omnijsAppleScriptDelay !== undefined) {
+    appleScriptDelay = params.omnijsAppleScriptDelay;
+    console.error(`---> [MCP_DEBUG] Using user-provided AppleScript delay: ${appleScriptDelay}s`);
+  } else {
+    if (filterTypeForPlugin === 'next_actions') {
+      appleScriptDelay = 60; // Longer default delay for next_actions
+      console.error(`---> [MCP_DEBUG] Using default AppleScript delay for next_actions: ${appleScriptDelay}s`);
+    } else {
+      appleScriptDelay = 20; // Default delay for other types (e.g., full_dump)
+      console.error(`---> [MCP_DEBUG] Using default AppleScript delay for ${filterTypeForPlugin}: ${appleScriptDelay}s`);
+    }
+  }
 
-
-  // The AppleScript body.
-  const appleScriptBody = `
-on encode_text(theText)
-    set oldDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to ""
-    set theChars to characters of theText
-    set theResult to ""
-    set HCHARS to "0123456789ABCDEF" -- Hex characters for percent encoding
-    repeat with aChar in theChars
-        set cID to id of aChar
-        if (cID ≥ 48 and cID ≤ 57) or ¬
-           (cID ≥ 65 and cID ≤ 90) or ¬
-           (cID ≥ 97 and cID ≤ 122) or ¬
-           cID = 45 or cID = 46 or cID = 95 or cID = 126 then -- Unreserved character
-            set theResult to theResult & aChar as string
-        else
-            set H to (cID div 16) + 1
-            set L to (cID mod 16) + 1
-            set theResult to theResult & "%" & (character H of HCHARS) & (character L of HCHARS)
-        end if
-    end repeat
-    set AppleScript's text item delimiters to oldDelimiters
-    return theResult
-end encode_text
-
-try
-    set pluginId to "com.jmg.exportmasterplan.v11.final"
-    set DQUOTE to character id 34
-
-    -- The JSON criteria string, already escaped for AppleScript from TypeScript
-    set jsCriteriaString to "${filterCriteriaJSONString}"
+  // --- START REPLACEMENT OF appleScriptBody --- 
+  const currentModuleUrl = new URL(import.meta.url);
+  // Resolve path correctly, especially if pathname needs to be decoded or is a file URL
+  const currentDir = path.dirname(currentModuleUrl.pathname.startsWith('file://') ? decodeURIComponent(currentModuleUrl.pathname.substring(7)) : decodeURIComponent(currentModuleUrl.pathname));
+  const appleScriptFilePath = path.join(currentDir, '..', '..', 'scripts', 'omnifocus_plugin_runner.applescript');
     
-    tell application "OmniFocus"
-        if not (exists front document) then
-            error "OmniFocus has no front document. Please open a window to run the script."
-        end if
-        
-        -- Pass the criteria JSON string to the OmniJS plugin's perform method.
-        -- The plugin's perform(arg) method will receive this string and should JSON.parse(arg).
-        set jsCore to "PlugIn.find(" & DQUOTE & pluginId & DQUOTE & ").actions[0].perform(" & DQUOTE & jsCriteriaString & DQUOTE & ");"
-        set encodedOmniJs to my encode_text(jsCore)
-        set theURL to "omnifocus://localhost/omnijs-run?script=" & encodedOmniJs
+  let appleScriptTemplate: string;
+  try {
+    appleScriptTemplate = fs.readFileSync(appleScriptFilePath, 'utf8');
+  } catch (readError: any) {
+    console.error(`[DUMPDB_CORE] Failed to read AppleScript template file at ${appleScriptFilePath}. Error: ${readError.message}`);
+    throw new Error(`Failed to read AppleScript template file at ${appleScriptFilePath}. Error: ${readError.message}`);
+  }
 
-        -- Try to execute GetURL
-        try
-            GetURL theURL
-        on error errMsgOpen number errNumOpen
-            error "AppleScript Error during GetURL: " & errMsgOpen & " (Number: " & errNumOpen & ")"
-        end try
-        
-    end tell
+  const appleScriptBody = appleScriptTemplate
+    .replace(/__PLUGIN_ID__/g, OMNIFOCUS_PLUGIN_ID)
+    .replace(/__ESCAPED_JSON_CRITERIA_FOR_APPLESCRIPT_STRING__/g, escapedJsonCriteriaForAppleScriptString)
+    .replace(/__DELAY_SECONDS__/g, appleScriptDelay.toString());
+  // --- END REPLACEMENT OF appleScriptBody --- 
 
-    -- Wait for the plugin to execute and copy to clipboard.
-    -- Reduced delay significantly if 'next_actions' is requested, assuming faster plugin execution.
-    delay ${appleScriptDelay}
-
-    -- Get the contents from the clipboard
-    try
-        set clipboardContent to (the clipboard as text) -- Ensure it's treated as text
-        
-        if clipboardContent is "" then
-            error "AppleScript Error: Clipboard was empty after plugin execution and delay."
-        end if
-        
-        -- Check if the clipboard content is the specific success message from the plugin
-        -- This indicates the plugin ran but didn't output the JSON as expected (e.g. an error occurred within the plugin before JSON generation)
-        if clipboardContent starts with "SUCCESS: JSON data copied to clipboard" then
-            -- This is a bit of a special case. The plugin itself signals success in copying,
-            -- but this AppleScript is supposed to return the *JSON data itself*.
-            -- This state indicates the clipboard *was* written to by the plugin, but not with the JSON.
-            -- Or, more likely, this script ran *too fast* and got the *previous* clipboard content
-            -- if the plugin hadn't updated it yet. The delay above should help, but this check is a safeguard.
-            -- For now, we'll treat this as an error because we expect the JSON.
-            error "AppleScript Error: Clipboard contained plugin success message, not JSON data. Plugin might have errored internally or clipboard not updated in time. Content: " & clipboardContent
-        end if
-
-        return clipboardContent
-        
-    on error errMsgClipboard number errNumClipboard
-        error "AppleScript Error: Could not read from clipboard or clipboard content was invalid. Error (" & errNumClipboard & "): " & errMsgClipboard
-    end try
-
-on error errorMessage number errorNumber
-    return "AppleScript Error (Number: " & errorNumber & "): " & errorMessage
-end try
-`;
-
-  //console.debug("[DUMPDB] AppleScript body prepared. Executing via spawn..."); // Changed to //console.debug
-  // Moved logging here
-  // console.error("--- BEGIN AppleScript Body ---"); // Removing this block
-  // console.error(appleScriptBody); 
-  // console.error("--- END AppleScript Body ---");
-
+  // ---- START MCP DEBUG LOGGING (using console.error) ----
+  console.error(`---> [MCP_PRE_EXEC_APPLESCRIPT_DEBUG] About to call execAppleScript. filterTypeForPlugin: ${filterTypeForPlugin}`);
+  // ---- END MCP DEBUG LOGGING ----
   const jsonResult = await execAppleScript(appleScriptBody);
-  // console.error(`[DUMPDB_DEBUG] Raw result from AppleScript: "${jsonResult}"`); // Already removed this type of log
+  // ---- START MCP DEBUG LOGGING (using console.error) ----
+  console.error(`---> [MCP_POST_EXEC_APPLESCRIPT_DEBUG] execAppleScript returned. jsonResult (raw): "${jsonResult}"`);
+  // ---- END MCP DEBUG LOGGING ----
 
   let dataFromOmniJS: any;
   try {
-      // console.error(`[DUMPDB_DEBUG] Attempting to parse result from AppleScript: "${jsonResult}"`);
       dataFromOmniJS = JSON.parse(jsonResult);
   } catch (parseError: any) {
-      console.error(`[DUMPDB_DEBUG] JSON.parse failed. Original AppleScript output was: "${jsonResult}". Error: ${parseError.message}`); // Keep critical error
+      console.error(`[DUMPDB_CORE] JSON.parse failed. Original AppleScript output was: "${jsonResult}". Error: ${parseError.message}`);
       throw new Error(`Failed to parse AppleScript output as JSON. Output: "${jsonResult}". Parse Error: ${parseError.message}`);
   }
  
-  // --- BEGIN Adapted Transformation Logic ---
   let transformedFoldersMap: Record<string, OmnifocusFolder> = {};
   let transformedProjectsMap: Record<string, OmnifocusProject> = {};
   let transformedInboxTasks: OmnifocusTask[] = [];
   let allTransformedTasks: OmnifocusTask[] = [];
   let transformedTagsMap: Record<string, OmnifocusTag> = {};
 
-  // Check if data seems to be from an updated plugin returning filtered data directly
-  // The OmniJS plugin, when updated, should return a structure like:
-  // { version: "omni-js-filtered-...", timestamp: "...", criteriaUsed: { ... }, 
-  //   tasks: [], projects: {}, folders: {}, tags: {}, inboxTasks: [] }
   const isFilteredPayload = dataFromOmniJS.criteriaUsed && dataFromOmniJS.version?.startsWith('omni-js-filtered');
 
   if (isFilteredPayload && filterCriteria.type === 'next_actions') {
-    //console.debug("[DUMPDB] Processing optimized/filtered payload from OmniJS plugin.");
+    //console.debug("[DUMPDB_CORE] Processing optimized/filtered payload from OmniJS plugin for 'next_actions'.");
 
-    // Directly use folders if provided in the expected format, or transform if needed
     if (dataFromOmniJS.folders) {
         for (const folderId in dataFromOmniJS.folders) {
             const omniJsFolder = dataFromOmniJS.folders[folderId];
@@ -398,7 +353,6 @@ end try
         }
     }
 
-    // Directly use projects, transform their tasks
     if (dataFromOmniJS.projects) {
         for (const projectId in dataFromOmniJS.projects) {
             const omniJsProject = dataFromOmniJS.projects[projectId];
@@ -406,7 +360,7 @@ end try
                 id: omniJsProject.id || projectId,
                 name: omniJsProject.name || 'Untitled Project',
                 status: omniJsProject.status || 'Unknown',
-                tasks: (omniJsProject.tasks || []).map(transformOmniJsTaskToOmnifocusTask),
+                tasks: (omniJsProject.tasks || []).map(transformOmniJsTaskToOmnifocusTask), // these tasks are already filtered by plugin
                 note: omniJsProject.note,
                 dueDate: omniJsProject.dueDate,
                 deferDate: omniJsProject.deferDate,
@@ -418,14 +372,24 @@ end try
     
     transformedInboxTasks = (dataFromOmniJS.inboxTasks || []).map(transformOmniJsTaskToOmnifocusTask);
 
-    allTransformedTasks = [...transformedInboxTasks];
-    Object.values(transformedProjectsMap).forEach(p => {
-        if (p && p.tasks) {
-            allTransformedTasks = allTransformedTasks.concat(p.tasks);
-        }
-    });
+    // For 'next_actions', the `dataFromOmniJS.tasks` should already be the filtered list of project tasks
+    // and `dataFromOmniJS.inboxTasks` is the filtered list of inbox tasks.
+    // The transformOmniJsTaskToOmnifocusTask is applied to ensure structure consistency.
+    // The OmniJS plugin itself is responsible for the filtering logic for 'next_actions'.
+    allTransformedTasks = (dataFromOmniJS.tasks || []).map(transformOmniJsTaskToOmnifocusTask).concat(transformedInboxTasks);
     
-    // Directly use tags if provided
+    // The `tasks` property within `transformedProjectsMap` for `next_actions` might be misleading if populated above,
+    // as `allTransformedTasks` should be the comprehensive list. Let's ensure project tasks are not duplicated or missed.
+    // The OmniJS 'next_actions' payload has top-level 'tasks' and 'inboxTasks'.
+    // Projects in 'next_actions' payload typically don't list their tasks again if those tasks are already in the top-level lists.
+    // So, tasks within transformedProjectsMap[projectId].tasks should generally be empty or not used for assembling allTransformedTasks for next_actions.
+    // We'll rely on the top-level `dataFromOmniJS.tasks` and `dataFromOmniJS.inboxTasks`.
+    // Let's clear project.tasks to avoid confusion for 'next_actions' mode if populated from a non-empty omniJsProject.tasks
+     for (const projectId in transformedProjectsMap) {
+        transformedProjectsMap[projectId].tasks = []; // Tasks are flat in `allTransformedTasks` for next_actions
+    }
+
+
     if (dataFromOmniJS.tags) {
         for (const tagId in dataFromOmniJS.tags) {
             const omniJsTag = dataFromOmniJS.tags[tagId];
@@ -435,20 +399,15 @@ end try
             };
         }
     }
-    // TaskTags would also need to be sourced if the filtered payload provides them
-    // For now, assuming dataFromOmniJS.taskTags if present, or an empty array.
-    // This part might need more fleshing out based on what the OmniJS plugin returns for taskTags.
 
-
-  } else {
-    //console.debug("[DUMPDB] Processing full payload from OmniJS plugin (legacy or 'full_dump' mode).");
-    // Fallback to existing transformation logic for full dump
+  } else { // Handles 'full_dump' or if isFilteredPayload is false
+    //console.debug("[DUMPDB_CORE] Processing full payload from OmniJS plugin (legacy or 'full_dump' mode).");
     (dataFromOmniJS.structure?.topLevelFolders || []).forEach((f: any) => {
       if (f && f.id) {
         transformedFoldersMap[f.id] = {
           id: f.id,
           name: f.name || "Untitled Folder",
-          parentFolderID: f.parentFolder?.id || null,
+          parentFolderID: f.parentFolder?.id || null, // Assuming structure from full dump
         };
       }
     });
@@ -458,11 +417,6 @@ end try
         if (item.type === "Folder") {
           allOmniJsFoldersList.push(item);
           if (item.folders) collectFoldersRecursive(item.folders);
-          if (item.projects) { 
-              item.projects.forEach((proj: any) => {
-                  // Simplified: Relies on parentFolderID for hierarchy later
-              });
-          }
         }
       });
     }
@@ -470,7 +424,7 @@ end try
       collectFoldersRecursive(dataFromOmniJS.structure.topLevelFolders);
     }
     allOmniJsFoldersList.forEach((f: any) => {
-        if (f && f.id && !transformedFoldersMap[f.id]) {
+        if (f && f.id && !transformedFoldersMap[f.id]) { // Check if already added
              transformedFoldersMap[f.id] = {
                   id: f.id,
                   name: f.name || "Untitled Folder",
@@ -490,7 +444,7 @@ end try
         transformedProjectsMap[p.id] = {
           id: p.id,
           name: p.name || 'Untitled Project',
-          status: p.status || 'Unknown',
+          status: p.status || 'Unknown', // Align with OmnifocusProject status
           tasks: (p.tasks || []).map(transformOmniJsTaskToOmnifocusTask),
           note: p.note,
           dueDate: p.dueDate,
@@ -504,36 +458,81 @@ end try
     transformedInboxTasks = (dataFromOmniJS.inboxItems || []).map(transformOmniJsTaskToOmnifocusTask);
 
     allTransformedTasks = [...transformedInboxTasks];
-    Object.values(transformedProjectsMap).forEach(p => {
-      if (p && p.tasks) {
-          allTransformedTasks = allTransformedTasks.concat(p.tasks);
+    Object.values(transformedProjectsMap).forEach(proj => { // Renamed 'p' to 'proj' for clarity
+      if (proj && proj.tasks) {
+          allTransformedTasks = allTransformedTasks.concat(proj.tasks);
       }
     });
     
-    // Tags would be processed from the full dump if available (current code initializes to {})
-    // This part is not explicitly in the old code for populating transformedTagsMap,
-    // so it would default to empty or rely on how formatCompactReport handles it.
-    // For consistency, if dataFromOmniJS.tags exists in a full dump, we could process it.
-    // For now, it will remain {} unless explicitly populated by OmniJS.
+    // For full dump, tags might be part of individual tasks or projects, or a separate top-level list if plugin provides
+    // The current full dump OmniJS payload seems to put tags inside task objects (task.tags as array of names)
+    // The transformOmniJsTaskToOmnifocusTask extracts tagIds from task.tags (array of tag objects).
+    // We need to populate transformedTagsMap from a comprehensive list of tags if available from the full dump.
+    // If the full dump provides a global 'tags' map/array, use that. Otherwise, build from tasks.
+    if (dataFromOmniJS.tags && typeof dataFromOmniJS.tags === 'object') { // Assuming tags is a map like in filtered payload
+        for (const tagId in dataFromOmniJS.tags) {
+            const omniJsTag = dataFromOmniJS.tags[tagId];
+            transformedTagsMap[tagId] = {
+                id: omniJsTag.id || tagId,
+                name: omniJsTag.name || "Untitled Tag",
+            };
+        }
+    } else {
+        // Fallback: collect tags from all tasks if no global tag list in full dump
+        allTransformedTasks.forEach(task => {
+            if (task.tagIds && dataFromOmniJS.tasks) { // Assuming tasks have full tag objects in original OmniJS data
+                const originalTask = dataFromOmniJS.tasks.find((t:any) => t.id === task.id) || dataFromOmniJS.inboxItems?.find((t:any) => t.id === task.id);
+                if (originalTask && originalTask.tags) {
+                    originalTask.tags.forEach((tagObj: any) => {
+                        if (tagObj.id && tagObj.name && !transformedTagsMap[tagObj.id]) {
+                            transformedTagsMap[tagObj.id] = { id: tagObj.id, name: tagObj.name };
+                        }
+                    });
+                }
+            }
+        });
+    }
   }
-  // --- END Adapted Transformation Logic ---
 
   const database: OmnifocusDumpData = {
     version: dataFromOmniJS.version || (isFilteredPayload ? 'mcp-filtered-1.0' : 'mcp-transformed-1.5'),
     timestamp: dataFromOmniJS.timestamp || new Date().toISOString(),
     folders: transformedFoldersMap,
     projects: transformedProjectsMap,
-    inboxTasks: transformedInboxTasks, // These are already OmnifocusTask[]
-    tasks: allTransformedTasks,       // These are already OmnifocusTask[]
-    tags: transformedTagsMap, // Now populated if plugin provides it
-    taskTags: dataFromOmniJS.taskTags || [], // Use if provided, else empty
+    inboxTasks: transformedInboxTasks,
+    tasks: allTransformedTasks,
+    tags: transformedTagsMap,
+    taskTags: dataFromOmniJS.taskTags || [], // Use if provided, common for filtered, might be empty for full
   };
 
-  // Filtering logic (hideCompleted, hideRecurringDuplicates) is now primarily pushed to the OmniJS plugin.
-  // If hideCompleted was requested in params, the plugin should have handled it.
-  // The params.hideRecurringDuplicates is still a placeholder for future implementation.
-
-  //console.debug(`[DUMPDB_DEBUG] FINAL database object being returned to caller: ${JSON.stringify(database, null, 2)}`);
+  //console.debug(`[DUMPDB_CORE] FINAL database object being returned to caller: ${JSON.stringify(database, null, 2)}`);
   return database;
+}
+
+
+// Main function to dump the database (now for GetFullOmnifocusReport)
+export async function dumpDatabase(
+  params: McpOmnifocusDevGetFullOmnifocusReportParams,
+  _mcpContext: any,
+  _logger: any,
+): Promise<OmnifocusDatabase> {
+  //console.debug("[DUMPDB_FULL] Attempting to dump OmniFocus database (full report)...", params);
+  const filterType = params.filterType || 'full_dump'; // Default to full_dump for this function
+  return executeOmniFocusPluginAndGetData(filterType, params, _mcpContext, _logger);
+}
+
+// New exported function for GetNextActionsReport
+export async function fetchNextActionsReport(
+  params: McpOmnifocusDevGetNextActionsReportParams,
+  _mcpContext: any, 
+  _logger: any,
+): Promise<OmnifocusDatabase> {
+  //console.debug("[DUMPDB_NEXT_ACTIONS] Attempting to fetch next actions report...", params);
+  // For next actions, filterType is fixed, hideCompleted defaults to true if not specified.
+  const effectiveParams: McpOmnifocusDevGetNextActionsReportParams = {
+    hideCompleted: params.hideCompleted === undefined ? true : params.hideCompleted,
+    omnijsAppleScriptDelay: params.omnijsAppleScriptDelay, // Pass through if specified
+  };
+  return executeOmniFocusPluginAndGetData('next_actions', effectiveParams, _mcpContext, _logger);
 }
 

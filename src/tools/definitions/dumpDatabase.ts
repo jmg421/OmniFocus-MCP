@@ -3,9 +3,14 @@ import { dumpDatabase } from '../dumpDatabase.js'; // Ensure this is uncommented
 import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types"; // Back to ServerRequest
 import { spawn } from 'child_process'; // Added for local execAppleScript
+import * as fs from 'fs'; // Added import
+import * as path from 'path'; // Added import
 
 // Local execAppleScript function using spawn
 function execAppleScript(scriptBody: string): Promise<string> {
+  // ---- START MCP DEBUG LOGGING (using console.error) ----
+  console.error(`---> [MCP_SIMPLE_EXEC_APPLE_SCRIPT_DEBUG] Script body first 100 chars: ${scriptBody.substring(0, 100)}...`);
+  // ---- END MCP DEBUG LOGGING ----
   return new Promise((resolve, reject) => {
     const process = spawn('osascript', ['-e', scriptBody]);
     let stdout = '';
@@ -20,6 +25,12 @@ function execAppleScript(scriptBody: string): Promise<string> {
     });
 
     process.on('close', (code) => {
+      // ---- START MCP DEBUG LOGGING (using console.error) ----
+      console.error(`---> [MCP_SIMPLE_EXEC_APPLE_SCRIPT_DEBUG] Process closed.`);
+      console.error(`---> [MCP_SIMPLE_EXEC_APPLE_SCRIPT_DEBUG] Exit code: ${code}`);
+      console.error(`---> [MCP_SIMPLE_EXEC_APPLE_SCRIPT_DEBUG] Stderr: "${stderr.trim()}"`);
+      console.error(`---> [MCP_SIMPLE_EXEC_APPLE_SCRIPT_DEBUG] Stdout: "${stdout.trim()}"`);
+      // ---- END MCP DEBUG LOGGING ----
       if (code === 0) {
         resolve(stdout.trim());
       } else {
@@ -69,6 +80,21 @@ export async function handler(args: z.infer<typeof schema>, extra: RequestHandle
     // TODO: Determine how to get McpContext and Logger to pass to dumpDatabase.
     // For now, passing undefined to allow compilation, assuming dumpDatabase can handle it or uses its own fallbacks.
     const database = await dumpDatabase(args, undefined /* McpContext */, undefined /* Logger */);
+    
+    // ---- START: Write database to omnifocus_export.json ----
+    try {
+      const workspaceRoot = process.cwd(); // Assume cwd is workspace root when handler runs
+      const exportFilePath = path.join(workspaceRoot, 'data', 'omnifocus_export.json');
+      // const exportFilePath = '/Users/johnmuirhead-gould/MasterPlan/data/omnifocus_export.json'; // REMOVED HARDCODED PATH
+      const jsonString = JSON.stringify(database, null, 2);
+      fs.writeFileSync(exportFilePath, jsonString, 'utf8');
+      // console.error(`---> [MCP_HANDLER_DEBUG] Successfully wrote database to ${exportFilePath}`); // REMOVED DIAGNOSTIC LOG
+    } catch (writeError: any) {
+      console.error(`---> [MCP_HANDLER_ERROR] Failed to write omnifocus_export.json: ${writeError.message}`); // Kept error log
+      // We'll log the error but not fail the whole report generation for now
+      // extra.sendNotification({ type: 'warning', message: `Failed to update data/omnifocus_export.json: ${writeError.message}`});
+    }
+    // ---- END: Write database to omnifocus_export.json ----
     
     const report = formatCompactReport(database, {
       hideCompleted: args.hideCompleted !== false,
