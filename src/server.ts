@@ -16,6 +16,9 @@ import * as batchAddItemsTool from './tools/definitions/batchAddItems.js';
 import * as batchRemoveItemsTool from './tools/definitions/batchRemoveItems.js';
 // import * as dummyLogTestTool from './tools/definitions/dummyLogTest.js'; // We'll use a more specific import below
 
+// Import for the new complete_omnifocus_task tool
+import * as completeTaskTool from './tools/definitions/completeTask.js';
+
 // Import for the new getNextActionsReport tool
 import { handler as getNextActionsReportHandler, schema as getNextActionsReportSchema } from './tools/definitions/getNextActionsReport.js';
 
@@ -107,6 +110,17 @@ server.tool(
   batchRemoveItemsTool.schema.shape,
   typedBatchRemoveItemsHandler
 );
+
+// Register the new complete_omnifocus_task tool
+console.error("[SERVER_DEBUG] Attempting to register complete_omnifocus_task...");
+const typedCompleteTaskHandler: ToolCallback<typeof completeTaskTool.schema.shape> = completeTaskTool.handle;
+const completeTaskRegResult = server.tool(
+  "complete_omnifocus_task", // Tool name exposed to the MCP client
+  "Completes an OmniFocus task by its ID using a dedicated AppleScript.",
+  completeTaskTool.schema.shape,
+  typedCompleteTaskHandler
+);
+console.error("[SERVER_DEBUG] Registration result for complete_omnifocus_task:", completeTaskRegResult);
 
 try {
   console.error("[SERVER_DEBUG] Attempting to register dummy_log_test_v2...");

@@ -19,7 +19,7 @@ export type BatchAddItemsParams = {
 // Define the result type for individual operations
 type ItemResult = {
   success: boolean;
-  id?: string;
+  name: string;
   error?: string;
 };
 
@@ -58,7 +58,7 @@ export async function batchAddItems(items: BatchAddItemsParams[]): Promise<Batch
           const taskResult = await addOmniFocusTask(taskParams);
           results.push({
             success: taskResult.success,
-            id: taskResult.taskId,
+            name: item.name,
             error: taskResult.error
           });
         } else if (item.type === 'project') {
@@ -79,13 +79,14 @@ export async function batchAddItems(items: BatchAddItemsParams[]): Promise<Batch
           const projectResult = await addProject(projectParams);
           results.push({
             success: projectResult.success,
-            id: projectResult.projectId,
+            name: item.name,
             error: projectResult.error
           });
         } else {
           // Invalid type
           results.push({
             success: false,
+            name: item.name,
             error: `Invalid item type: ${(item as any).type}`
           });
         }
@@ -93,6 +94,7 @@ export async function batchAddItems(items: BatchAddItemsParams[]): Promise<Batch
         // Handle individual item errors
         results.push({
           success: false,
+          name: item.name,
           error: itemError.message || "Unknown error processing item"
         });
       }

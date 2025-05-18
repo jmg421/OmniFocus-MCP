@@ -1,13 +1,14 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { formatDateForAppleScript, isValidDate, normalizeDate } from '../../utils/dateFormatting.js';
 const execAsync = promisify(exec);
 
 // Interface for task creation parameters
 export interface AddOmniFocusTaskParams {
   name: string;
   note?: string;
-  dueDate?: string; // ISO date string
-  deferDate?: string; // ISO date string
+  dueDate?: string; // ISO date string (YYYY-MM-DD or full ISO)
+  deferDate?: string; // ISO date string (YYYY-MM-DD or full ISO)
   flagged?: boolean;
   estimatedMinutes?: number;
   tags?: string[]; // Tag names
@@ -18,11 +19,31 @@ export interface AddOmniFocusTaskParams {
  * Generate pure AppleScript for task creation
  */
 function generateAppleScript(params: AddOmniFocusTaskParams): string {
+  // Validate and normalize dates
+  let normalizedDueDate: string | undefined;
+  let normalizedDeferDate: string | undefined;
+  
+  if (params.dueDate) {
+    const normalized = normalizeDate(params.dueDate);
+    if (normalized === null) {
+      throw new Error(`Invalid due date format: ${params.dueDate}`);
+    }
+    normalizedDueDate = normalized;
+  }
+  
+  if (params.deferDate) {
+    const normalized = normalizeDate(params.deferDate);
+    if (normalized === null) {
+      throw new Error(`Invalid defer date format: ${params.deferDate}`);
+    }
+    normalizedDeferDate = normalized;
+  }
+
   // Sanitize and prepare parameters for AppleScript
   const name = params.name.replace(/['"\\]/g, '\\$&'); // Escape quotes and backslashes
   const note = params.note?.replace(/['"\\]/g, '\\$&') || '';
-  const dueDate = params.dueDate || '';
-  const deferDate = params.deferDate || '';
+  const dueDate = normalizedDueDate ? formatDateForAppleScript(normalizedDueDate) : '';
+  const deferDate = normalizedDeferDate ? formatDateForAppleScript(normalizedDeferDate) : '';
   const flagged = params.flagged === true;
   const estimatedMinutes = params.estimatedMinutes?.toString() || '';
   const tags = params.tags || [];
@@ -49,38 +70,27 @@ function generateAppleScript(params: AddOmniFocusTaskParams): string {
         
         -- Set task properties
         ${note ? `set note of newTask to "${note}"` : ''}
-        ${dueDate ? `
-          set due date of newTask to (current date) + (time to GMT)
-          set due date of newTask to date "${dueDate}"` : ''}
-        ${deferDate ? `
-          set defer date of newTask to (current date) + (time to GMT)
-          set defer date of newTask to date "${deferDate}"` : ''}
+        ${dueDate ? `set due date of newTask to date "${dueDate}"` : ''}
+        ${deferDate ? `set defer date of newTask to date "${deferDate}"` : ''}
         ${flagged ? `set flagged of newTask to true` : ''}
         ${estimatedMinutes ? `set estimated minutes of newTask to ${estimatedMinutes}` : ''}
         
-        -- Get the task ID
-        set taskId to id of newTask as string
+        -- Add tags if specified
+        ${tags.length > 0 ? `
+          repeat with tagName in {"${tags.join('","')}"}
+            try
+              set theTag to first flattened tag where name = tagName
+              assign theTag to newTask
+            end try
+          end repeat
+        ` : ''}
         
-        -- Add tags if provided
-        ${tags.length > 0 ? tags.map(tag => {
-          const sanitizedTag = tag.replace(/['"\\]/g, '\\$&');
-          return `
-          try
-            set theTag to first flattened tag where name = "${sanitizedTag}"
-            tell newTask to add theTag
-          on error
-            -- Ignore errors finding/adding tags
-          end try`;
-        }).join('\n') : ''}
-        
-        -- Return success with task ID
-        return "{\\\"success\\\":true,\\\"taskId\\\":\\"" & taskId & "\\",\\\"name\\\":\\"${name}\\"}"
+        return "{\\\"success\\\":true,\\\"message\\\":\\\"Task created successfully\\\"}"
       end tell
     end tell
-  on error errorMessage
-    return "{\\\"success\\\":false,\\\"error\\\":\\"" & errorMessage & "\\"}"
-  end try
-  `;
+  on error errMsg
+    return "{\\\"success\\\":false,\\\"error\\\":\\\"" & errMsg & "\\\"}"
+  end try`
   
   return script;
 }
@@ -88,44 +98,20 @@ function generateAppleScript(params: AddOmniFocusTaskParams): string {
 /**
  * Add a task to OmniFocus
  */
-export async function addOmniFocusTask(params: AddOmniFocusTaskParams): Promise<{success: boolean, taskId?: string, error?: string}> {
+export async function addOmniFocusTask(params: AddOmniFocusTaskParams): Promise<{ success: boolean, error?: string }> {
   try {
-    // Generate AppleScript
     const script = generateAppleScript(params);
+    const { stdout } = await execAsync(`osascript -e '${script}'`);
     
-    console.error("Executing AppleScript directly...");
-    
-    // Execute AppleScript directly
-    const { stdout, stderr } = await execAsync(`osascript -e '${script}'`);
-    
-    if (stderr) {
-      console.error("AppleScript stderr:", stderr);
-    }
-    
-    console.error("AppleScript stdout:", stdout);
-    
-    // Parse the result
     try {
       const result = JSON.parse(stdout);
-      
-      // Return the result
-      return {
-        success: result.success,
-        taskId: result.taskId,
-        error: result.error
-      };
-    } catch (parseError) {
-      console.error("Error parsing AppleScript result:", parseError);
-      return {
-        success: false,
-        error: `Failed to parse result: ${stdout}`
-      };
+      return result;
+    } catch (e: Error | unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `Failed to parse AppleScript result: ${stdout}. Error: ${errorMessage}` };
     }
-  } catch (error: any) {
-    console.error("Error in addOmniFocusTask:", error);
-    return {
-      success: false,
-      error: error?.message || "Unknown error in addOmniFocusTask"
-    };
+  } catch (e: Error | unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    return { success: false, error: errorMessage };
   }
 } 
