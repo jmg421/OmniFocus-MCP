@@ -1,6 +1,5 @@
 {
   "name": "omnifocus-mcp",
-  "type": "module",
   "version": "1.0.9",
   "description": "Model Context Protocol (MCP) server that integrates with OmniFocus for AI assistant interaction",
   "main": "dist/server.js",

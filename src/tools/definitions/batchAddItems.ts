@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { batchAddItems, BatchAddItemsParams } from '../primitives/batchAddItems.js';
-import { Request, Notification } from '@modelcontextprotocol/sdk/types';
+import { Request, Notification } from '@modelcontextprotocol/sdk/types.js';
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 
 export const schema = z.object({
   items: z.array(z.object({
@@ -24,7 +24,7 @@ export const schema = z.object({
   })).describe("Array of items (tasks or projects) to add")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) {
+export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
   try {
     // Call the batchAddItems function
     const result = await batchAddItems(args.items as BatchAddItemsParams[]);

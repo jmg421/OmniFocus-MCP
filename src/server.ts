@@ -4,7 +4,7 @@ console.error("MCP Server restarted - Handler Log Test 1"); // Changed to consol
 
 import { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 
 // Import tool definitions
 import * as dumpDatabaseTool from './tools/definitions/dumpDatabase.js';

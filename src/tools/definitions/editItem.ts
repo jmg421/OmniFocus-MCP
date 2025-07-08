@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { editItem, EditItemParams } from '../primitives/editItem.js';
-import { Request, Notification } from '@modelcontextprotocol/sdk/types';
+import { Request, Notification } from '@modelcontextprotocol/sdk/types.js';
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 
 export const schema = z.object({
   id: z.string().optional().describe("The ID of the task or project to edit"),
@@ -29,7 +29,7 @@ export const schema = z.object({
   newProjectStatus: z.enum(['active', 'completed', 'dropped', 'onHold']).optional().describe("New status for projects")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) {
+export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
   try {
     // Validate that either id or name is provided
     if (!args.id && !args.name) {

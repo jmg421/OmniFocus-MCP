@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 import { addOmniFocusTask } from '../primitives/addOmniFocusTask.js';
 
 export const schema = z.object({
@@ -14,7 +14,7 @@ export const schema = z.object({
   projectName: z.string().optional().describe("The name of the project to add the task to (will add to inbox if not specified)")
 });
 
-export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => {
+export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra) => {
   console.error("TEST LOG FROM ADD_TASK HANDLER ENTRY (using console.error)");
   console.error("[ADD_TASK_HANDLER_DEBUG] addOmniFocusTask handler entered with args (using console.error):", args);
   try {

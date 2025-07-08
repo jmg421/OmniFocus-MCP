@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { Request, Notification } from '@modelcontextprotocol/sdk/types';
+import { Request, Notification } from '@modelcontextprotocol/sdk/types.js';
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 
 export const schema = z.object({
   random_string: z.string().optional().describe("A random string to include in the log")
 });
 
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) {
+export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
   const message = `Minimal dummy handler executed. Input: ${args.random_string || 'N/A'}`;
   
   console.error("Tool: dummy_log_test_v2 (using console.error), Result:", message); 

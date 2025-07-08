@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { removeItem, RemoveItemParams } from '../primitives/removeItem.js';
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 
 export const schema = z.object({
   id: z.string().optional().describe("The ID of the task or project to remove"),
@@ -9,7 +9,7 @@ export const schema = z.object({
   itemType: z.enum(['task', 'project']).describe("Type of item to remove ('task' or 'project')")
 });
 
-export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) => {
+export const handler = async (args: z.infer<typeof schema>, extra: RequestHandlerExtra) => {
   // const { logger } = extra; // Placeholder for MCP logger
   // logger.log('removeItem.handler called with:', args);
   console.log('removeItem.handler called with:', args); // Temporary log

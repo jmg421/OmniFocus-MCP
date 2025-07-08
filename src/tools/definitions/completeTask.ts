@@ -1,17 +1,11 @@
 import { z } from 'zod';
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types";
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { spawn } from 'child_process';
 import * as path from 'path';
 // import * as fs from 'fs'; // fs.existsSync is removed for now
 
-// For ES Module equivalent of __dirname
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// Define __filename and __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// __dirname is globally available in CommonJS, no need for custom implementation.
 
 // Define the schema for the input parameters
 export const schema = z.object({
@@ -34,7 +28,7 @@ interface McpToolResponse {
 
 export async function handle(
   params: Params,
-  extra: RequestHandlerExtra<ServerRequest, ServerNotification>
+  extra: RequestHandlerExtra
 ): Promise<McpToolResponse> {
   const { task_id } = params;
   

@@ -132,11 +132,10 @@ function execAsyncAndCapture(command: string): Promise<string> { // Removed logg
 
 // Promisified version of spawn for osascript, now using a temporary file
 async function execAppleScript(scriptBody: string): Promise<string> {
-  const normalizedScriptBody = scriptBody.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalizedScriptBody = scriptBody.replace(/\\r\\n/g, "\\n").replace(/\\r/g, "\\n");
   const tempFileName = `mcp_applescript_temp_${Date.now()}.applescript`;
   
-  const currentModulePath = new URL(import.meta.url).pathname;
-  const currentDir = path.dirname(currentModulePath);
+  const currentDir = __dirname;
 
   const tempDir = path.join(currentDir, '..', 'tmp_applescripts_mcp'); 
 
@@ -296,9 +295,7 @@ async function executeOmniFocusPluginAndGetData(
   }
 
   // --- START REPLACEMENT OF appleScriptBody --- 
-  const currentModuleUrl = new URL(import.meta.url);
-  // Resolve path correctly, especially if pathname needs to be decoded or is a file URL
-  const currentDir = path.dirname(currentModuleUrl.pathname.startsWith('file://') ? decodeURIComponent(currentModuleUrl.pathname.substring(7)) : decodeURIComponent(currentModuleUrl.pathname));
+  const currentDir = __dirname;
   const appleScriptFilePath = path.join(currentDir, '..', '..', 'scripts', 'omnifocus_plugin_runner.applescript');
     
   let appleScriptTemplate: string;

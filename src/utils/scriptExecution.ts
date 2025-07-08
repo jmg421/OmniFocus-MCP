@@ -3,8 +3,6 @@ import { promisify } from 'util';
 import { writeFileSync, unlinkSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
@@ -56,8 +54,6 @@ export async function executeOmniFocusScript(scriptPath: string, args?: any): Pr
     let actualPath;
     if (scriptPath.startsWith('@')) {
       const scriptName = scriptPath.substring(1);
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = dirname(__filename);
       
       const distPath = join(__dirname, '..', 'utils', 'omnifocusScripts', scriptName);
       const srcPath = join(__dirname, '..', '..', 'src', 'utils', 'omnifocusScripts', scriptName);

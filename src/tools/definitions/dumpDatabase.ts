@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { dumpDatabase } from '../dumpDatabase.js'; // Ensure this is uncommented
 import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types"; // Back to ServerRequest
+import { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js"; // Back to ServerRequest
 import { spawn } from 'child_process'; // Added for local execAppleScript
 import * as fs from 'fs'; // Added import
 import * as path from 'path'; // Added import
@@ -73,7 +73,7 @@ export const schema = z.object({
 
 
 // Original handler - restored
-export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra<ServerRequest, ServerNotification>) {
+export async function handler(args: z.infer<typeof schema>, extra: RequestHandlerExtra) {
   // Logging needs to be addressed. For now, console.error is a placeholder.
   // The 'extra' object does not directly contain a logger or mcpContext.
   try {
