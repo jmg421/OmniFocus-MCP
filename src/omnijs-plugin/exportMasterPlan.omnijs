@@ -1,0 +1,197 @@
+/*{
+    "type": "action",
+    "targets": ["omnifocus"],
+    "author": "JMG",
+    "identifier": "com.jmg.exportmasterplan",
+    "version": "2.1",
+    "description": "Export OmniFocus database in JSON format. v2.1 automates the database audit on full exports.",
+    "label": "Export Master Plan",
+    "shortLabel": "Export Master Plan",
+    "paletteLabel": "Export Master Plan",
+    "image": "doc.text"
+}*/
+(() => {
+    const PLUGIN_VERSION = "2.1";
+    const action = new PlugIn.Action(function(selection, sender, argument) {
+        // --- DEBUG LOGGING ---
+        console.log(`[OF-EXPORT:${PLUGIN_VERSION}] ===== PLUGIN CALLED =====`);
+        
+        // --- SETUP ---
+        let actualArgument = argument;
+        let actualSelection = selection;
+        if (typeof selection === 'string') {
+            actualArgument = selection;
+            actualSelection = app.defaultDocument.windows[0] ? app.defaultDocument.windows[0].selection : { database: app.defaultDocument };
+        }
+        const isAutomaticMode = actualArgument !== undefined && actualArgument !== null && actualArgument !== "";
+        console.log(`[OF-EXPORT:${PLUGIN_VERSION}] isAutomaticMode: ${isAutomaticMode}`);
+
+        // --- DATABASE ACCESS ---
+        let database;
+        try {
+            if (actualSelection && actualSelection.database) database = actualSelection.database;
+            else if (app.defaultDocument) database = app.defaultDocument;
+            else if (Document.getFront) database = Document.getFront();
+            else if (app.windows && app.windows[0] && app.windows[0].document) database = app.windows[0].document;
+            else if (document) database = document;
+            else if (Document.frontDocument) database = Document.frontDocument();
+            if (!database) throw new Error('No OmniFocus document available');
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Database access successful.`);
+        } catch (error) {
+            console.error(`[OF-EXPORT:${PLUGIN_VERSION}] Database access failed: ${error.message}`);
+            return;
+        }
+
+        const logAuditCounts = (db) => {
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] === DATABASE AUDIT COUNTS ===`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Projects: ${db.flattenedProjects.length}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Folders: ${db.flattenedFolders.length}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tasks (incl. subtasks & inbox): ${db.flattenedTasks.length}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tags: ${db.tags.length}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] =============================`);
+        };
+
+        // --- UTILITY FUNCTIONS ---
+        const getTaskStatus = (task) => {
+            if (task.completed) return 'Completed';
+            switch (task.taskStatus) {
+                case Task.Status.Active: return 'Active';
+                case Task.Status.Completed: return 'Completed';
+                case Task.Status.Dropped: return 'Dropped';
+                case Task.Status.DueSoon: return 'DueSoon';
+                case Task.Status.Flagged: return 'Flagged';
+                case Task.Status.Next: return 'Next';
+                case Task.Status.Overdue: return 'Overdue';
+                case Task.Status.Blocked: return 'Blocked';
+                case Task.Status.Available: return 'Available';
+                default: return 'Unknown';
+            }
+        };
+        const taskToJSON = (task) => {
+            const proj = task.containingProject;
+            const parent = task.parent;
+            return {
+                id: task.id.primaryKey, name: task.name, note: task.note, status: getTaskStatus(task),
+                taskStatus: task.taskStatus.name, flagged: task.flagged, completed: task.completed,
+                dueDate: task.dueDate, deferDate: task.deferDate, completionDate: task.completionDate,
+                estimatedMinutes: task.estimatedMinutes, projectId: proj ? proj.id.primaryKey : null,
+                parentId: parent ? parent.id.primaryKey : null, childIds: task.tasks.map(t => t.id.primaryKey),
+                tagIds: task.tags.map(t => t.id.primaryKey),
+            };
+        };
+        const projectToJSON = (project) => ({
+            id: project.id.primaryKey, name: project.name, status: project.status.name,
+            note: project.note,
+            dueDate: project.dueDate,
+            deferDate: project.deferDate,
+            completed: project.completed,
+            completionDate: project.completionDate,
+            estimatedMinutes: project.estimatedMinutes,
+            folderId: project.parentFolder ? project.parentFolder.id.primaryKey : null
+        });
+        const folderToJSON = (folder) => ({
+            id: folder.id.primaryKey, name: folder.name,
+            parentFolderID: folder.parentFolder ? folder.parentFolder.id.primaryKey : null,
+        });
+
+        // --- CORE EXPORT AND SAVE LOGIC ---
+        const performExport = (criteria, db, isAuto) => {
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Performing export with criteria: ${JSON.stringify(criteria)}`);
+            
+            let version = "2.0";
+            if (criteria.type === 'next_actions') version = "next-actions-2.0";
+            if (criteria.type === 'full_dump') version = "full-dump-2.0";
+
+            const result = {
+                version: version, timestamp: new Date().toISOString(), tasks: [],
+                projects: {}, folders: {}, tags: {},
+            };
+            const allTags = new Map();
+            const collectTagsFromTask = (task) => task.tags.forEach(tag => {
+                if (!allTags.has(tag.id.primaryKey)) allTags.set(tag.id.primaryKey, { id: tag.id.primaryKey, name: tag.name });
+            });
+
+            if (criteria.type === 'next_actions') {
+                const availableTasks = db.flattenedTasks.filter(t => t.taskStatus === Task.Status.Available || t.taskStatus === Task.Status.Next);
+                result.tasks = availableTasks.map(taskToJSON);
+                availableTasks.forEach(collectTagsFromTask);
+            } else if (criteria.type === 'flagged_analysis') {
+                console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Flagged analysis not fully implemented, using full dump.`);
+                criteria.type = 'full_dump';
+            } 
+            
+            if (criteria.type === 'full_dump') {
+                logAuditCounts(db);
+                const allTasks = db.flattenedTasks || [];
+                const allProjects = db.flattenedProjects || [];
+                const allFolders = db.flattenedFolders || [];
+
+                allFolders.forEach(folder => result.folders[folder.id.primaryKey] = folderToJSON(folder));
+                allProjects.forEach(project => result.projects[project.id.primaryKey] = projectToJSON(project));
+                
+                result.tasks = allTasks.map(taskToJSON);
+                allTasks.forEach(collectTagsFromTask);
+            }
+
+            allTags.forEach((tag, tagId) => result.tags[tagId] = tag);
+            const jsonString = JSON.stringify(result, null, 2);
+            const jsonData = Data.fromString(jsonString);
+
+            if (isAuto) {
+                console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Automatic mode: saving to clipboard`);
+                Pasteboard.general.string = jsonString;
+            } else {
+                console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Interactive mode: Showing save dialog`);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const filename = `omnifocus-export-${criteria.type}-${timestamp}.json`;
+                const wrapper = FileWrapper.withContents(filename, jsonData);
+                const filesaver = new FileSaver();
+                filesaver.show(wrapper).then(fileURL => {
+                    new Alert("Export Complete", `File saved to: ${fileURL.string}`).show();
+                }).catch(saveError => {
+                    new Alert('Save Error', 'Failed to save file. JSON copied to clipboard instead.').show();
+                    Pasteboard.general.string = jsonString;
+                });
+            }
+        };
+
+        // --- CONTROL FLOW ---
+        try {
+            if (isAutomaticMode) {
+                let criteria = { type: 'full_dump' };
+                try { 
+                    if(actualArgument) criteria = JSON.parse(actualArgument); 
+                } catch (e) { /* use default */ }
+                performExport(criteria, database, true);
+            } else {
+                const exportTypeAlert = new Alert("Export Type", "Choose export type:");
+                exportTypeAlert.addOption("Full Database Export");
+                exportTypeAlert.addOption("Next Actions Only");
+                exportTypeAlert.addOption("Flagged Items Analysis (WIP)");
+                
+                exportTypeAlert.show().then(exportChoice => {
+                    let criteria;
+                    switch (exportChoice) {
+                        case 0: criteria = { type: 'full_dump' }; break;
+                        case 1: criteria = { type: 'next_actions' }; break;
+                        case 2: criteria = { type: 'flagged_analysis' }; break;
+                        default: criteria = { type: 'full_dump' };
+                    }
+                    performExport(criteria, database, false);
+                }).catch(err => {
+                    console.error(`[OF-EXPORT:${PLUGIN_VERSION}] Dialog error: ${err.message}`);
+                    new Alert("Error", `Dialog failed: ${err.message}`).show();
+                });
+            }
+        } catch (err) {
+            console.error(`[OF-EXPORT:${PLUGIN_VERSION}] Global error: ${err.name} - ${err.message}`);
+            if (!isAutomaticMode) new Alert(err.name, err.message).show();
+        }
+    });
+
+    action.validate = function(selection, sender) {
+        return true;
+    };
+
+    return action;
+})(); 
