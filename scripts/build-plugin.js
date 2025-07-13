@@ -15,34 +15,37 @@ if (!fs.existsSync(distDir)) {
 
 const sourceCode = fs.readFileSync(path.join(srcDir, 'exportMasterPlan.js'), 'utf8');
 
-const pluginJson = {
-    "identifier": pluginId,
-    "version": "1.0",
-    "description": pluginDescription,
-    "author": authorName,
-    "actions": [
-        {
-            "title": pluginName,
-            "script": "run-wrapper.js",
-            "handler": "run",
-            "argument": {
-                "type": "string",
-                "label": "JSON Criteria",
-                "default": "{\\"type\\":\\"full_dump\\"}"
-            }
-        }
-    ],
-    "files": [
-        {
-            "name": "run-wrapper.js",
-            "content": "const run = (argument) => { const mainLogic = (() => { " + sourceCode + " })(); return mainLogic(argument); };"
-        }
-    ]
-};
+// Create proper OmniFocus plugin format with embedded manifest
+const pluginContent = `/*{
+	"type": "action",
+	"targets": ["omnifocus"],
+	"author": "${authorName}",
+	"identifier": "${pluginId}",
+	"version": "1.0",
+	"description": "${pluginDescription}",
+	"label": "${pluginName}",
+	"shortLabel": "Export Master Plan",
+	"paletteLabel": "Export Master Plan",
+	"image": "doc.text"
+}*/
+(() => {
+	const action = new PlugIn.Action(function(selection, sender){
+		// Wrap the source code in a function that gets the argument
+		const argument = JSON.stringify({type: "flagged_analysis", hideCompleted: false});
+		
+		// Execute the main logic
+		${sourceCode.replace(/^const run = \(argument\) => \{/, '').replace(/\};?\s*$/, '')}
+	});
 
-const finalPluginContent = JSON.stringify(pluginJson, null, 2);
+	action.validate = function(selection, sender){
+		return true;
+	};
+	
+	return action;
+})();`;
+
 const finalFileName = `${pluginId}.omnijs`;
+fs.writeFileSync(path.join(distDir, finalFileName), pluginContent, 'utf8');
 
-fs.writeFileSync(path.join(distDir, finalFileName), finalPluginContent, 'utf8');
-
-console.log(`Successfully built plugin: ${path.join(distDir, finalFileName)}`); 
+console.log(`Plugin built successfully: ${finalFileName}`);
+console.log(`Output directory: ${distDir}`); 

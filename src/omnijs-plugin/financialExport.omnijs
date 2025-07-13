@@ -1,0 +1,3 @@
+// Copy of exportMasterPlan, modified for finance
+/*{ "type": "action", "targets": ["omnifocus"], "author": "JMG", "identifier": "com.jmg.financialexport.v1.0", "version": "1.0", "description": "Export finance-tagged tasks", "label": "Financial Export", "shortLabel": "Fin Export", "paletteLabel": "Fin Export", "image": "money.bag" }*/
+// ... rest as exportMasterPlan, but in main logic: filter tasks with tag 'Finance' ... 
