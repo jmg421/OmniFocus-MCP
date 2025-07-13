@@ -44,10 +44,14 @@
 
         const logAuditCounts = (db) => {
             console.log(`[OF-EXPORT:${PLUGIN_VERSION}] === DATABASE AUDIT COUNTS ===`);
-            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Projects: ${db.flattenedProjects.length}`);
-            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Folders: ${db.flattenedFolders.length}`);
-            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tasks (incl. subtasks & inbox): ${db.flattenedTasks.length}`);
-            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tags: ${db.tags.length}`);
+            const projCount = (db && db.flattenedProjects) ? db.flattenedProjects.length : (typeof flattenedProjects !== 'undefined' ? flattenedProjects.length : 'N/A');
+            const folderCount = (db && db.flattenedFolders) ? db.flattenedFolders.length : (typeof flattenedFolders !== 'undefined' ? flattenedFolders.length : 'N/A');
+            const taskCount = (db && db.flattenedTasks) ? db.flattenedTasks.length : (typeof flattenedTasks !== 'undefined' ? flattenedTasks.length : 'N/A');
+            const tagCount = (db && db.tags) ? db.tags.length : (typeof tags !== 'undefined' ? tags.length : 'N/A');
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Projects: ${projCount}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Folders: ${folderCount}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tasks (incl. subtasks & inbox): ${taskCount}`);
+            console.log(`[OF-EXPORT:${PLUGIN_VERSION}] Total Tags: ${tagCount}`);
             console.log(`[OF-EXPORT:${PLUGIN_VERSION}] =============================`);
         };
 
@@ -122,9 +126,9 @@
             
             if (criteria.type === 'full_dump') {
                 logAuditCounts(db);
-                const allTasks = db.flattenedTasks || [];
-                const allProjects = db.flattenedProjects || [];
-                const allFolders = db.flattenedFolders || [];
+                const allTasks = (db && db.flattenedTasks) ? db.flattenedTasks : (typeof flattenedTasks !== 'undefined' ? flattenedTasks : []);
+                const allProjects = (db && db.flattenedProjects) ? db.flattenedProjects : (typeof flattenedProjects !== 'undefined' ? flattenedProjects : []);
+                const allFolders = (db && db.flattenedFolders) ? db.flattenedFolders : (typeof flattenedFolders !== 'undefined' ? flattenedFolders : []);
 
                 allFolders.forEach(folder => result.folders[folder.id.primaryKey] = folderToJSON(folder));
                 allProjects.forEach(project => result.projects[project.id.primaryKey] = projectToJSON(project));
