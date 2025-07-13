@@ -20,12 +20,13 @@ on run
     set encodedJS to my urlEncode(jsCall)
     set omniURL to "omnifocus://localhost/omnijs-run?script=" & encodedJS
 
-    -- Fire the plugin (OmniFocus will briefly come to the front)
-    tell application "OmniFocus"
-        activate
-        if not (exists front document) then error "OmniFocus has no open window."
-        open location omniURL
-    end tell
+    -- Fire the plugin via the 'open' command so OmniFocus runs in the background (-g keeps it from becoming frontmost, -j launches hidden)
+    do shell script "open -gj " & quoted form of omniURL
+    
+    -- If OmniFocus is not running yet, give it a moment to launch before we start the delay timer
+    if application "OmniFocus" is not running then
+        delay 3 -- initial launch buffer
+    end if
 
     -- Wait for the plugin to finish copying JSON
     delay waitSeconds
